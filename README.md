@@ -30,13 +30,17 @@ The widget appears on the far right of the status bar within ~30s.
 - tmux ≥ 3.2
 - [`bun`](https://bun.sh/) (for `bunx` to invoke ccusage), `jq`, `flock`,
   `awk`, `date` (GNU coreutils)
+- `codex` CLI (≥ 0.125) on `$PATH` — used to query Codex's rate-limit RPC
 
 ## How it works
 
-Data comes from [`ccusage`](https://github.com/ryoppippi/ccusage) for Claude
-and the local Codex session JSONLs at `~/.codex/sessions/**/*.jsonl` for Codex
-— both purely on-disk, no network calls to Anthropic/OpenAI from this project,
-no credentials handled.
+Data sources, both local — no credentials handled by this project:
+
+- **Claude**: [`ccusage`](https://github.com/ryoppippi/ccusage), invoked via
+  `bunx`. Reads `~/.claude/projects/**/*.jsonl`.
+- **Codex**: a one-shot `codex app-server` subprocess speaking the
+  `account/rateLimits/read` JSON-RPC. Returns the same primary/secondary
+  rate-limit windows the Codex TUI shows in its status bar.
 
 Two scripts:
 
@@ -71,11 +75,9 @@ Color thresholds: green <50%, yellow 50–80%, red ≥80%.
 If you see `[✱ —] [❋ —]`, the cache is missing or stale (>2 min old) —
 usually means the updater died. Check `pgrep -fa context-usage-update`.
 
-If Codex shows `[❋ ?]`, it means there's no Codex session JSONL newer than
-5h. **Codex 0.125+** has moved its state into `~/.codex/state_5.sqlite` and
-only keeps rate-limit values in memory (the `account/rateLimits/read` RPC),
-so on-disk parsing only works for older releases. Tracking issue: surfacing
-the live RPC value here is on the roadmap.
+If Codex shows `[❋ ?]`, the `codex` CLI isn't on `$PATH` or its
+`account/rateLimits/read` RPC didn't respond — install codex ≥ 0.125 or
+override the binary location with `CODEX_BIN=/path/to/codex`.
 
 ## Configuration
 
@@ -86,7 +88,8 @@ Environment variables (read by the updater / renderer):
 | `CONTEXT_USAGE_REFRESH_SECS`   | `30`    | How often the updater polls ccusage          |
 | `CONTEXT_USAGE_BAR_WIDTH`      | `5`     | Bar width in cells                           |
 | `CU_STALE_AFTER_SECS`          | `120`   | Cache age past which renderer shows fallback |
-| `CODEX_HOME`                   | `~/.codex` | Where to look for Codex session JSONLs   |
+| `CODEX_BIN`                    | `codex` | Codex CLI binary used for the rate-limit RPC    |
+| `CODEX_HOME`                   | `~/.codex` | Reserved for future on-disk fallbacks         |
 
 ## Verification
 
