@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# Stateless renderer. Reads $XDG_RUNTIME_DIR/context-usage.json and prints
+# one line for tmux's status-right. Never calls ccusage. Never blocks.
+#
+# Output (example):
+#   [C ███▒▒ 62% ⏰2h14m] [G~ ██▒▒▒ 41% ⏰3h]
+#
+# Falls back to "[C —] [G —]" if the cache is missing or stale (>2 min).
+# The "~" suffix on a tag (e.g. C~ or G~) means estimated:true — for
+# Claude this is always the case today (ccusage limit is heuristic);
+# Codex is exact (real OpenAI rate-limit headers).
+
+set -euo pipefail
+
+cu_self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=../lib/common.sh
+source "$cu_self_dir/lib/common.sh"
+# shellcheck source=../lib/bar.sh
+source "$cu_self_dir/lib/bar.sh"
+
+CU_STALE_AFTER_SECS="${CU_STALE_AFTER_SECS:-120}"
+CU_FALLBACK="[C —] [G —]"
+
+cu_render_one() {
+  local tag="$1" obj="$2"
+  local ok pct reset estimated
+  ok="$(jq -r '.ok // false' <<<"$obj")"
+  pct="$(jq -r '.percent // 0' <<<"$obj")"
+  reset="$(jq -r '.reset_epoch // 0' <<<"$obj")"
+  estimated="$(jq -r '.estimated // false' <<<"$obj")"
+
+  local label="$tag"
+  [[ $estimated == "true" ]] && label="${tag}~"
+
+  if [[ $ok != "true" ]]; then
+    printf '[%s ?]' "$label"
+    return
+  fi
+
+  local pct_int
+  pct_int="$(awk -v p="$pct" 'BEGIN{printf "%d", p+0.5}')"
+  printf '[%s %s %s%% ⏰%s]' \
+    "$label" \
+    "$(cu_bar_render "$pct")" \
+    "$pct_int" \
+    "$(cu_bar_countdown "$reset")"
+}
+
+cu_main() {
+  local cache now updated age
+  cache="$(cu_cache_path)"
+  if [[ ! -s $cache ]]; then
+    printf '%s\n' "$CU_FALLBACK"
+    return
+  fi
+
+  now="$(cu_now_epoch)"
+  updated="$(jq -r '.updated_at // 0' "$cache" 2>/dev/null || printf '0')"
+  age=$((now - updated))
+  if (( age > CU_STALE_AFTER_SECS )); then
+    printf '%s\n' "$CU_FALLBACK"
+    return
+  fi
+
+  local claude codex
+  claude="$(jq -c '.claude' "$cache")"
+  codex="$(jq -c '.codex' "$cache")"
+  printf '%s %s\n' "$(cu_render_one C "$claude")" "$(cu_render_one G "$codex")"
+}
+
+cu_main "$@"
