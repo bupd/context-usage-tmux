@@ -7,20 +7,20 @@
 # Output format:
 #   #[fg=COLOR]██▒▒▒#[default]
 #
-# Colors track the cmux.conf palette so the widget visually matches the
-# user's existing pane-border styling:
-#   <50%   colour46  green
-#   50-80% colour220 yellow
-#   >=80%  colour196 red
+# The bar shows percent *remaining* — a full bar means a full tank. Colors
+# track the cmux.conf palette and warn as the tank empties:
+#   >50% left   colour46  green   (plenty)
+#   20-50% left colour220 yellow  (get ready)
+#   <20% left   colour196 red     (about to run out)
 
 CU_BAR_FILLED='█'
 CU_BAR_EMPTY='▒'
 
 cu_bar_color() {
-  local pct="$1"
-  if   awk "BEGIN{exit !($pct >= 80)}"; then printf 'colour196'
-  elif awk "BEGIN{exit !($pct >= 50)}"; then printf 'colour220'
-  else                                       printf 'colour46'
+  local pct_left="$1"
+  if   awk "BEGIN{exit !($pct_left <= 20)}"; then printf 'colour196'
+  elif awk "BEGIN{exit !($pct_left <= 50)}"; then printf 'colour220'
+  else                                            printf 'colour46'
   fi
 }
 

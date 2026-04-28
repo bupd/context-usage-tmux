@@ -5,11 +5,12 @@ A tmux status-bar widget that shows your current Claude Code and Codex CLI
 countdowns and the date/time.
 
 ```
-… [✱~ ███▒▒ 62% ⏰2h14m] [❋ ██▒▒▒ 41% ⏰3h] 14:32 28-Apr
+… [✱~ ██▒▒▒ 38% ⏰2h14m] [⏣ ███▒▒ 59% ⏰3h] 14:32 28-Apr
 ```
 
-`✱` is Claude (orange), `❋` is OpenAI/Codex (white) — single-glyph stand-ins
-for each vendor's logo, drawn in their brand color.
+`✱` is Claude (orange), `⏣` is OpenAI/Codex (white) — single-glyph stand-ins
+for each vendor's logo, drawn in their brand color. The percent shown is
+how much of the 5h window is **remaining** — full bar = full tank.
 
 Same idea as the macOS menu-bar widgets (Usage4Claude, ClaudeBar, AIQuotaBar) —
 but native to tmux, shell-only, no menu bar required.
@@ -56,28 +57,32 @@ config doesn't double-up.
 ## Reading the bar
 
 ```
-[✱~ ███▒▒ 62% ⏰2h14m]
+[✱~ ██▒▒▒ 38% ⏰2h14m]
  │  │     │   │
  │  │     │   └── time until the 5h window resets
- │  │     └────── current usage percent
- │  └──────────── filled cells (each cell = 1/WIDTH of the window)
- └─────────────── tag: ✱ = Claude (orange), ❋ = Codex/OpenAI (white); "~" = estimated
+ │  │     └────── percent of the window *remaining* (38 = 38% left)
+ │  └──────────── filled cells (each cell = 1/WIDTH of the remaining window)
+ └─────────────── tag: ✱ = Claude (orange), ⏣ = Codex/OpenAI (white); "~" = estimated
 ```
 
 `~` on a tag means the percent is heuristic. Claude carries it because we
 report ccusage's `tokenLimitStatus.percentUsed`, which is computed against
 `--token-limit max` (max ever seen, not the official plan limit). Codex
-doesn't — its session JSONLs include real OpenAI rate-limit headers
-(`rate_limits.primary.used_percent`).
+doesn't — it pulls live values from the codex app-server's
+`account/rateLimits/read` RPC.
 
-Color thresholds: green <50%, yellow 50–80%, red ≥80%.
+Color thresholds (on percent **remaining**): green >50%, yellow 20–50%,
+red ≤20% (almost out).
 
-If you see `[✱ —] [❋ —]`, the cache is missing or stale (>2 min old) —
+If you see `[✱ —] [⏣ —]`, the cache is missing or stale (>2 min old) —
 usually means the updater died. Check `pgrep -fa context-usage-update`.
 
-If Codex shows `[❋ ?]`, the `codex` CLI isn't on `$PATH` or its
+If Codex shows `[⏣ ?]`, the `codex` CLI isn't on `$PATH` or its
 `account/rateLimits/read` RPC didn't respond — install codex ≥ 0.125 or
 override the binary location with `CODEX_BIN=/path/to/codex`.
+
+If your terminal font lacks `✱`/`⏣`/`█`/`▒`, set `CU_PLAIN=1` in the
+environment for an ASCII-safe fallback (`C`/`G`/`#`/`-`).
 
 ## Configuration
 

@@ -20,28 +20,28 @@ write_cache() {
   }' >"$cache"
 }
 
-# Fresh cache.
+# Fresh cache. 62% used → 38% left for Claude; 41% used → 59% left for Codex.
 write_cache "$fresh_now"
 out="$(./bin/context-usage-render)"
-if [[ $out != *'✱'*'~'*'62% '* || $out != *'❋'*'41% '* ]]; then
+if [[ $out != *'✱'*'~'*'38% '* || $out != *'⏣'*'59% '* ]]; then
   echo "FAIL  fresh render: $out"
   exit 1
 fi
 echo "ok    fresh: $out"
 
-# Stale cache → fallback.
+# Stale cache → fallback (with appended date/time).
 write_cache "$stale_now"
 out="$(./bin/context-usage-render)"
-if [[ $out != "[✱ —] [❋ —]" ]]; then
+if [[ $out != "[✱ —] [⏣ —] "* ]]; then
   echo "FAIL  stale render: $out"
   exit 1
 fi
 echo "ok    stale: $out"
 
-# Missing cache → fallback.
+# Missing cache → fallback (with appended date/time).
 rm -f "$cache"
 out="$(./bin/context-usage-render)"
-if [[ $out != "[✱ —] [❋ —]" ]]; then
+if [[ $out != "[✱ —] [⏣ —] "* ]]; then
   echo "FAIL  missing render: $out"
   exit 1
 fi
