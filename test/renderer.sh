@@ -23,7 +23,7 @@ write_cache() {
 # Fresh cache.
 write_cache "$fresh_now"
 out="$(./bin/context-usage-render)"
-if [[ $out != *'[C~ '*'62% '* || $out != *'[G '*'41% '* ]]; then
+if [[ $out != *'✱'*'~'*'62% '* || $out != *'❋'*'41% '* ]]; then
   echo "FAIL  fresh render: $out"
   exit 1
 fi
@@ -32,7 +32,7 @@ echo "ok    fresh: $out"
 # Stale cache → fallback.
 write_cache "$stale_now"
 out="$(./bin/context-usage-render)"
-if [[ $out != "[C —] [G —]" ]]; then
+if [[ $out != "[✱ —] [❋ —]" ]]; then
   echo "FAIL  stale render: $out"
   exit 1
 fi
@@ -41,7 +41,7 @@ echo "ok    stale: $out"
 # Missing cache → fallback.
 rm -f "$cache"
 out="$(./bin/context-usage-render)"
-if [[ $out != "[C —] [G —]" ]]; then
+if [[ $out != "[✱ —] [❋ —]" ]]; then
   echo "FAIL  missing render: $out"
   exit 1
 fi
