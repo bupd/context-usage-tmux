@@ -1,10 +1,9 @@
 # Putting Claude Code and Codex usage in your tmux status bar
 
 I keep two AI coding sessions open most of the day — Claude Code in one
-pane, Codex CLI in another. Both have a 5-hour rolling window, and both
-will happily let you run into the wall without warning. The first time I
-hit a Claude limit mid-flow I lost ten minutes figuring out *whether* I'd
-hit it; the second time, twenty.
+pane, Codex CLI in another. Claude's context window fills up as a session
+grows, Codex has a 5-hour rolling window, and both will happily let you run
+into the wall without warning.
 
 The macOS world solved this a while ago — Usage4Claude, ClaudeBar,
 AIQuotaBar all live in the menu bar. None of them work for me, because I
@@ -15,25 +14,23 @@ So: **`context-usage-tmux`**. One `run-shell` line, two compact bars on
 the far right of your status bar:
 
 ```
-[✱~ ██▒▒▒ 38% ⏰2h14m] [⏣ ███▒▒ 59% ⏰3h] 14:32 28-Apr
+[✳ ctx ██▒▒▒ 38%] [⏣ ███▒▒ 59% ⏰3h] 14:32 28-Apr
 ```
 
-`✱` is Claude (orange), `⏣` is Codex (white). The percent is what's
+`✳` is Claude (orange), `⏣` is Codex (white). The percent is what's
 **remaining** — full bar = full tank — and the color goes red as you run
-out. The `⏰` is time until the window resets.
+out. Claude is context remaining; Codex keeps the `⏰` reset timer because
+it is a rate-limit window.
 
 ## Why this is harder than it looks
 
 Two annoyances dominated the implementation:
 
-**Claude's "limit" is fuzzy.** ccusage exposes
-`tokenLimitStatus.percentUsed` for the active block, but the limit it
-divides by is "max ever seen," not your plan's official cap. So we mark
-Claude as estimated (the `~` next to the glyph) and trust ccusage's own
-projection rather than recomputing from raw token counts. This was the
-single biggest bug-fix in the project — an early version reported 15%
-when ccusage's own UI said 41%, because we were dividing by the wrong
-denominator.
+**Claude context is only live in Claude Code.** The JSONL logs are useful for
+historical usage, but the live context-window percentage comes from Claude
+Code's official `statusLine` stdin payload. The bridge script caches that
+payload locally so tmux can show context remaining without blocking or
+guessing.
 
 **Codex 0.125 broke every JSONL-based scraper.** The Codex CLI used to
 write rate-limit info into `~/.codex/sessions/**/*.jsonl`, which made
@@ -53,8 +50,9 @@ This is the whole project:
 
 ```mermaid
 flowchart LR
+    SL["bin/context-usage-claude-statusline<br/>(Claude Code statusLine)"] -->|write| CCACHE[("$XDG_RUNTIME_DIR/<br/>context-usage-claude.json")]
     UP["bin/context-usage-update<br/>(every 30s, flock)"] -->|write| CACHE[("$XDG_RUNTIME_DIR/<br/>context-usage.json")]
-    UP -->|spawn| CCUSAGE["bunx ccusage"]
+    UP -->|read| CCACHE
     UP -->|spawn| CODEX["codex app-server RPC"]
     REN["bin/context-usage-render<br/>(every 5s, stateless)"] -->|read| CACHE
     TMUX["tmux status-right"] -->|invoke| REN
@@ -79,8 +77,8 @@ run-shell "~/code/context-usage-tmux/tmux/context-usage.tmux"
 
 Reload (`prefix + r`). The widget appears within ~30s.
 
-Requirements: tmux ≥ 3.2, `bun` (for `bunx ccusage`), `jq`, `flock`,
-GNU `date`, and `codex` CLI ≥ 0.125 if you want the Codex bar.
+Requirements: tmux ≥ 3.2, Claude Code with `statusLine` support, `jq`,
+`flock`, GNU `date`, and `codex` CLI ≥ 0.125 if you want the Codex bar.
 
 ## What's next
 

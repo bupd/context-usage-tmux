@@ -9,6 +9,10 @@ cu_cache_path() {
   printf '%s/context-usage.json' "$(cu_runtime_dir)"
 }
 
+cu_claude_cache_path() {
+  printf '%s/context-usage-claude.json' "$(cu_runtime_dir)"
+}
+
 cu_lock_path() {
   printf '%s/context-usage.lock' "$(cu_runtime_dir)"
 }
