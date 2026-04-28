@@ -43,7 +43,17 @@ Data sources, both local — no credentials handled by this project:
   `account/rateLimits/read` JSON-RPC. Returns the same primary/secondary
   rate-limit windows the Codex TUI shows in its status bar.
 
-Two scripts:
+Two scripts split across the slow/fast boundary:
+
+```mermaid
+flowchart LR
+    UP["context-usage-update<br/>(every 30s, flock)"] -->|write| CACHE[("$XDG_RUNTIME_DIR/<br/>context-usage.json")]
+    UP -->|spawn| CCUSAGE["bunx ccusage"]
+    UP -->|spawn| CODEX["codex app-server RPC"]
+    REN["context-usage-render<br/>(every 5s, stateless)"] -->|read| CACHE
+    TMUX["tmux status-right"] -->|invoke| REN
+    REN -->|stdout| TMUX
+```
 
 - **Updater** (`bin/context-usage-update`) — long-running, single-instance via
   `flock`. Polls every 30s, writes JSON to `$XDG_RUNTIME_DIR/context-usage.json`.
@@ -53,6 +63,8 @@ Two scripts:
 The `tmux/context-usage.tmux` entry point spawns the updater and prepends the
 renderer to your existing `status-right`. It's idempotent — re-sourcing the
 config doesn't double-up.
+
+See [`docs/architecture.md`](./docs/architecture.md) for the full design notes.
 
 ## Reading the bar
 
