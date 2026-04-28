@@ -24,15 +24,20 @@ cu_set_interval() {
 }
 
 cu_install_status_right() {
+  # The renderer is self-contained: it emits the bars *and* the date/time,
+  # so we don't need to append any tmux date format. If the user already
+  # has a status-right with things in it (e.g. git branch, session name),
+  # we prepend the renderer; otherwise we just set it. Idempotent: if our
+  # marker is already present, no-op.
   local current
   current="$(tmux show-option -gqv status-right || true)"
   if [[ $current == *"$CU_MARKER"* ]]; then
-    return 0   # already installed; don't double up
+    return 0
   fi
   if [[ -n $current ]]; then
     tmux set-option -g status-right "$CU_INVOCATION $current"
   else
-    tmux set-option -g status-right "$CU_INVOCATION %H:%M %d-%b"
+    tmux set-option -g status-right "$CU_INVOCATION"
   fi
 }
 
