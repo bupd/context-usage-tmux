@@ -3,15 +3,14 @@
 # one line for tmux's status-right. Never calls ccusage. Never blocks.
 #
 # Output (example):
-#   [✱~ ██▒▒▒ 38% ⏰2h14m] [❋ ███▒▒ 59% ⏰3h]
+#   [✱ ctx ██▒▒▒ 38%] [❋ ███▒▒ 59% ⏰3h]
 #
-# The percent shown is how much of the 5h window is *remaining* — a full
-# bar means a full tank, and the color goes red as you run out.
+# The percent shown is how much is *remaining* — Claude context on the left,
+# Codex 5-hour rate limit on the right. A full bar means a full tank, and the
+# color goes red as you run out.
 #
 # Tag glyphs are drawn in each vendor's brand color: ✱ in orange for
-# Claude, ❋ in white for OpenAI/Codex. A trailing "~" means estimated:true
-# — Claude carries it (ccusage limit is heuristic); Codex doesn't when it
-# has real rate-limit headers.
+# Claude, ❋ in white for OpenAI/Codex. A trailing "~" means estimated:true.
 #
 # Falls back to "[✱ —] [❋ —]" if the cache is missing or stale (>2 min).
 
@@ -42,11 +41,12 @@ CU_FALLBACK="[$CU_GLYPH_CLAUDE —] [$CU_GLYPH_CODEX —]"  # — when cache abs
 
 cu_render_one() {
   local glyph="$1" color="$2" obj="$3"
-  local ok pct reset estimated
+  local ok pct reset estimated kind
   ok="$(jq -r '.ok // false' <<<"$obj")"
   pct="$(jq -r '.percent // 0' <<<"$obj")"
   reset="$(jq -r '.reset_epoch // 0' <<<"$obj")"
   estimated="$(jq -r '.estimated // false' <<<"$obj")"
+  kind="$(jq -r '.kind // "rate_limit"' <<<"$obj")"
 
   local tag="#[fg=$color]$glyph#[default]"
   local label="$tag"
@@ -59,8 +59,22 @@ cu_render_one() {
 
   # Show percent *remaining* — a full bar means a full tank.
   local pct_left pct_left_int
-  pct_left="$(awk -v p="$pct" 'BEGIN{x=100-p; if(x<0)x=0; if(x>100)x=100; printf "%.2f", x}')"
+  pct_left="$(jq -r '.remaining_percent // empty' <<<"$obj")"
+  if [[ -z $pct_left ]]; then
+    pct_left="$(awk -v p="$pct" 'BEGIN{x=100-p; if(x<0)x=0; if(x>100)x=100; printf "%.2f", x}')"
+  else
+    pct_left="$(awk -v p="$pct_left" 'BEGIN{if(p<0)p=0; if(p>100)p=100; printf "%.2f", p}')"
+  fi
   pct_left_int="$(awk -v p="$pct_left" 'BEGIN{printf "%d", p+0.5}')"
+
+  if [[ $kind == "context" ]]; then
+    printf '[%s ctx %s %s%%]' \
+      "$label" \
+      "$(cu_bar_render "$pct_left")" \
+      "$pct_left_int"
+    return
+  fi
+
   printf '[%s %s %s%% ⏰%s]' \
     "$label" \
     "$(cu_bar_render "$pct_left")" \

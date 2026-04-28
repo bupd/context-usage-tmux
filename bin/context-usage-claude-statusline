@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# Claude Code statusLine bridge. Claude Code sends the live session payload on
+# stdin; this script stores the context-window fields for the tmux updater and
+# prints a tiny status line for Claude Code itself.
+
+set -euo pipefail
+
+cu_self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=../lib/common.sh
+source "$cu_self_dir/lib/common.sh"
+
+cu_statusline_error() {
+  printf 'ctx ?\n'
+}
+
+input="$(cat)"
+now="$(cu_now_epoch)"
+
+state="$(jq -c --argjson now "$now" '
+  def number_or_null:
+    try (if . == null then null else tonumber end) catch null;
+  def pct:
+    (try (if . == null then 0 else tonumber end) catch 0)
+    | if . < 0 then 0 elif . > 100 then 100 else . end;
+
+  (.context_window // {}) as $ctx
+  | ($ctx.used_percentage | number_or_null) as $used_raw
+  | ($ctx.remaining_percentage | number_or_null) as $remaining_raw
+  | (if $used_raw != null then ($used_raw | pct)
+     elif $remaining_raw != null then (100 - ($remaining_raw | pct) | pct)
+     else 0 end) as $used
+  | (if $remaining_raw != null then ($remaining_raw | pct)
+     else (100 - $used | pct) end) as $remaining
+  | (.rate_limits.five_hour // {}) as $five
+  | ($five.used_percentage | number_or_null) as $five_used
+  | (($five.resets_at // 0) | number_or_null // 0) as $five_reset
+  | {
+      updated_at: $now,
+      kind: "context",
+      percent: $used,
+      used_percent: $used,
+      remaining_percent: $remaining,
+      reset_epoch: 0,
+      ok: true,
+      estimated: false,
+      context_window_size: (($ctx.context_window_size // 0) | number_or_null // 0),
+      current_usage: ($ctx.current_usage // null),
+      total_input_tokens: (($ctx.total_input_tokens // 0) | number_or_null // 0),
+      total_output_tokens: (($ctx.total_output_tokens // 0) | number_or_null // 0),
+      model: (.model // null),
+      session_id: (.session_id // null),
+      rate_limit: (if $five_used == null then null else {
+        kind: "rate_limit",
+        percent: ($five_used | pct),
+        reset_epoch: $five_reset,
+        ok: true,
+        estimated: false
+      } end)
+    }
+' <<<"$input" 2>/dev/null)" || {
+  cu_statusline_error
+  exit 0
+}
+
+printf '%s\n' "$state" | cu_atomic_write "$(cu_claude_cache_path)" || {
+  cu_statusline_error
+  exit 0
+}
+
+remaining="$(jq -r '.remaining_percent // 0' <<<"$state")"
+remaining_int="$(awk -v p="$remaining" 'BEGIN{printf "%d", p+0.5}')"
+model="$(jq -r '.model.display_name // "Claude"' <<<"$state")"
+
+printf '%s ctx %s%% left\n' "$model" "$remaining_int"

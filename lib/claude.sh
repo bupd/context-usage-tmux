@@ -1,43 +1,67 @@
 # shellcheck shell=bash
-# Claude Code 5-hour usage via ccusage. Outputs a single JSON object on stdout:
-#   {"percent": <0-100>, "reset_epoch": <unix>, "ok": true|false, "estimated": true|false}
-#
-# Why "estimated": ccusage derives the token limit from "max ever seen"
-# (--token-limit max), which is a heuristic, not the official plan limit.
-# The percent is therefore an approximation. Switch off when Claude Code
-# exposes rate-limit headers to disk.
+# Claude Code live context usage via its official statusLine payload.
+# bin/context-usage-claude-statusline writes the latest payload-derived state
+# to $XDG_RUNTIME_DIR/context-usage-claude.json; the updater reads it here.
+
+cu_claude_stale_secs() {
+  printf '%s' "${CONTEXT_USAGE_CLAUDE_STALE_SECS:-180}"
+}
 
 cu_claude_fetch() {
-  local raw
-  raw="$(timeout 30 bunx ccusage@latest blocks --active --token-limit max --json 2>/dev/null)" || {
-    cu_claude_error "ccusage failed"
-    return 0
-  }
-
-  local block
-  block="$(jq -c '.blocks[] | select(.isActive == true)' <<<"$raw" 2>/dev/null)"
-  if [[ -z $block || $block == "null" ]]; then
-    # No active block — user hasn't used Claude in the current 5h window.
-    jq -nc '{percent: 0, reset_epoch: 0, ok: true, estimated: true}'
+  local cache
+  cache="$(cu_claude_cache_path)"
+  if [[ ! -s $cache ]]; then
+    cu_claude_error "no Claude statusLine cache"
     return 0
   fi
 
-  # ccusage's tokenLimitStatus.percentUsed already reflects projected usage
-  # (totalTokens + projected burst), which is what the live dashboard shows.
-  # Use it directly so our bar matches `ccusage blocks --live`.
-  local raw_pct end_iso
-  raw_pct="$(jq -r '.tokenLimitStatus.percentUsed // 0' <<<"$block")"
-  end_iso="$(jq -r '.endTime // ""' <<<"$block")"
+  local now updated stale age
+  now="$(cu_now_epoch)"
+  updated="$(jq -r '.updated_at // 0' "$cache" 2>/dev/null || printf '0')"
+  [[ $updated =~ ^[0-9]+$ ]] || updated=0
+  stale="$(cu_claude_stale_secs)"
+  age=$((now - updated))
+  if (( updated == 0 || age > stale )); then
+    cu_claude_error "stale Claude statusLine cache"
+    return 0
+  fi
 
-  local reset_epoch percent
-  reset_epoch="$(cu_iso_to_epoch "$end_iso")"
-  reset_epoch="${reset_epoch:-0}"
-  percent="$(awk -v p="$raw_pct" 'BEGIN{if(p<0)p=0; if(p>100)p=100; printf "%.1f", p}')"
+  local state
+  state="$(jq -c '
+    def pct:
+      (try (if . == null then 0 else tonumber end) catch 0)
+      | if . < 0 then 0 elif . > 100 then 100 else . end;
 
-  jq -nc --argjson p "$percent" --argjson r "$reset_epoch" \
-    '{percent: $p, reset_epoch: $r, ok: true, estimated: true}'
+    (.percent | pct) as $used
+    | {
+        kind: "context",
+        percent: $used,
+        used_percent: ((.used_percent // $used) | pct),
+        remaining_percent: ((.remaining_percent // (100 - $used)) | pct),
+        reset_epoch: 0,
+        ok: true,
+        estimated: false,
+        context_window_size: (.context_window_size // 0),
+        current_usage: (.current_usage // null),
+        total_input_tokens: (.total_input_tokens // 0),
+        total_output_tokens: (.total_output_tokens // 0),
+        model: (.model // null),
+        session_id: (.session_id // null),
+        rate_limit: (.rate_limit // null)
+      }
+  ' "$cache" 2>/dev/null)" || {
+    cu_claude_error "invalid Claude statusLine cache"
+    return 0
+  }
+
+  if [[ -z $state || $state == "null" ]]; then
+    cu_claude_error "invalid Claude statusLine cache"
+    return 0
+  fi
+
+  printf '%s\n' "$state"
 }
 
 cu_claude_error() {
-  jq -nc --arg msg "$1" '{percent: 0, reset_epoch: 0, ok: false, estimated: true, error: $msg}'
+  jq -nc --arg msg "$1" '{kind: "context", percent: 0, used_percent: 0, remaining_percent: 0, reset_epoch: 0, ok: false, estimated: false, error: $msg}'
 }

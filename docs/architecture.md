@@ -1,18 +1,26 @@
 # Architecture
 
-`context-usage-tmux` has two halves that never share memory: a **background
+`context-usage-tmux` has three pieces that never share memory: a Claude Code
+**statusLine bridge** that captures live context-window usage, a **background
 updater** that polls the slow data sources, and a **stateless renderer** that
-tmux invokes ~every 5s to print one line. They communicate through a single
-JSON cache file in `$XDG_RUNTIME_DIR`.
+tmux invokes ~every 5s to print one line. They communicate through JSON cache
+files in `$XDG_RUNTIME_DIR`.
 
 ```mermaid
 flowchart LR
     subgraph Background["background (every 30s)"]
         UP["bin/context-usage-update<br/>(flock single-instance)"]
-        CCUSAGE["bunx ccusage blocks<br/>(reads ~/.claude/projects/**)"]
+        CCACHE["context-usage-claude.json<br/>(statusLine sidecar)"]
         CODEX["codex app-server<br/>account/rateLimits/read RPC"]
-        UP -->|spawn| CCUSAGE
+        UP -->|read| CCACHE
         UP -->|spawn| CODEX
+    end
+
+    subgraph Claude["Claude Code statusLine"]
+        SL["bin/context-usage-claude-statusline"]
+        CLAUDE["Claude Code stdin JSON<br/>context_window.*"]
+        CLAUDE -->|stdin| SL
+        SL -->|write| CCACHE
     end
 
     CACHE[("$XDG_RUNTIME_DIR/<br/>context-usage.json")]
@@ -31,13 +39,14 @@ flowchart LR
 ## Why the split
 
 The renderer is on tmux's hot path — anything it does delays the status bar
-redraw. `bunx ccusage` cold-starts in 1–3s and `codex app-server` takes
-~1.5s for its JSON-RPC roundtrip. Doing either in the renderer would make
-tmux feel laggy every 5s.
+redraw. `codex app-server` takes ~1.5s for its JSON-RPC roundtrip, and Claude
+context is only exposed to Claude Code statusLine commands. Doing either in the
+renderer would make tmux feel laggy every 5s.
 
-So the renderer never calls them. It opens one file, runs a few `jq`
-queries, prints, exits. The slow work happens out-of-band in the updater,
-which writes a fresh cache atomically every 30s.
+So the renderer never calls them. It opens one file, runs a few `jq` queries,
+prints, exits. The slow work happens out-of-band in the updater, which writes a
+fresh cache atomically every 30s. Claude context arrives through the statusLine
+bridge whenever Claude Code refreshes its status line.
 
 ## Single-instance updater
 
@@ -61,10 +70,13 @@ it.
 {
   "updated_at": 1745851234,
   "claude": {
+    "kind": "context",
     "percent": 62,
-    "reset_epoch": 1745859274,
+    "used_percent": 62,
+    "remaining_percent": 38,
+    "reset_epoch": 0,
     "ok": true,
-    "estimated": true
+    "estimated": false
   },
   "codex": {
     "percent": 41,
@@ -75,19 +87,18 @@ it.
 }
 ```
 
-`percent` is **percent used** (0–100). The renderer flips it to
-"remaining" for display so a full bar means a full tank.
+`percent` is **percent used** (0–100). Claude also carries
+`remaining_percent` from Claude Code's `context_window.remaining_percentage`.
+The renderer shows remaining percent so a full bar means a full tank.
 
-`estimated: true` adds a `~` next to the tag glyph. Claude carries it
-because ccusage's limit is heuristic (max ever seen, not the official
-plan limit). Codex doesn't — its values come straight from the
-`account/rateLimits/read` RPC.
+Claude has `kind: "context"` and no reset countdown. Codex uses the default
+rate-limit rendering with a reset countdown from `account/rateLimits/read`.
 
 ## Data sources
 
 | Vendor | Source | Notes |
 | ------ | ------ | ----- |
-| Claude | `bunx ccusage blocks --active --json` | Reads `~/.claude/projects/**/*.jsonl`. |
+| Claude | Claude Code `statusLine` stdin JSON | Uses `context_window.remaining_percentage` for live context left. |
 | Codex  | `codex app-server` JSON-RPC: `initialize` then `account/rateLimits/read` | Codex ≥ 0.125 moved state from JSONL to in-memory; only the app-server exposes it. |
 
 Neither path touches the network or handles credentials — both data
