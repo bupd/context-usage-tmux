@@ -9,9 +9,9 @@
 
 just shipped `context-usage-tmux`
 
-claude code + codex cli 5-hour usage on the far right of your tmux status bar. one `run-shell` line, two bars, color-coded as you run out.
+claude code context + codex cli 5-hour usage on the far right of your tmux status bar. one `run-shell` line, two bars, color-coded as you run out.
 
-`[✱~ ██▒▒▒ 38% ⏰2h14m] [⏣ ███▒▒ 59% ⏰3h]`
+`[✳ ctx ██▒▒▒ 38%] [⏣ ███▒▒ 59% ⏰3h]`
 
 mit. https://github.com/bupd/context-usage-tmux
 
@@ -31,7 +31,7 @@ https://github.com/bupd/context-usage-tmux
 
 fun bug fixing this:
 
-ccusage's `percentUsed` divides by "max tokens ever seen", not your plan limit. recomputing from raw tokens gives you 15% when the real number is 41%. trust the upstream projection.
+claude's live context percentage is in the official statusLine stdin payload, not the historical jsonl logs. cache that payload locally and tmux can show context left without guessing.
 
 then codex 0.125 moved rate-limits in-memory. you have to spawn `codex app-server` and JSON-RPC `account/rateLimits/read` to read them. fun.
 
@@ -42,7 +42,7 @@ both fixed in `context-usage-tmux`: https://github.com/bupd/context-usage-tmux
 ## Reply-to-self thread (optional, after Option B)
 
 **Reply 1:**
-how it works: a background updater polls ccusage + codex app-server every 30s and writes JSON to `$XDG_RUNTIME_DIR/context-usage.json`. a stateless renderer reads that file and prints in ~60ms. tmux never blocks on a slow shell.
+how it works: claude statusLine writes context to a sidecar cache. a background updater polls that + codex app-server every 30s and writes JSON to `$XDG_RUNTIME_DIR/context-usage.json`. a stateless renderer prints in ~60ms. tmux never blocks on a slow shell.
 
 **Reply 2:**
 install:

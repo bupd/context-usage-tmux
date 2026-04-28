@@ -26,7 +26,7 @@ write_cache() {
 # Fresh cache. Claude shows context left without a reset; Codex shows rate-limit left with reset.
 write_cache "$fresh_now"
 out="$(./bin/context-usage-render)"
-if [[ $out != *'✱'*'ctx '*'38%] [#[fg=colour255]⏣'* || $out != *'⏣'*'59% ⏰'* ]]; then
+if [[ $out != *'✳'*'ctx '*'38%] [#[fg=colour255]⏣'* || $out == *'✳'*'~'* || $out != *'⏣'*'59% ⏰'* ]]; then
   echo "FAIL  fresh render: $out"
   exit 1
 fi
@@ -35,7 +35,7 @@ echo "ok    fresh: $out"
 # Stale cache → fallback (with appended date/time).
 write_cache "$stale_now"
 out="$(./bin/context-usage-render)"
-if [[ $out != "[✱ —] [⏣ —] "* ]]; then
+if [[ $out != "[✳ —] [⏣ —] "* ]]; then
   echo "FAIL  stale render: $out"
   exit 1
 fi
@@ -44,7 +44,7 @@ echo "ok    stale: $out"
 # Missing cache → fallback (with appended date/time).
 rm -f "$cache"
 out="$(./bin/context-usage-render)"
-if [[ $out != "[✱ —] [⏣ —] "* ]]; then
+if [[ $out != "[✳ —] [⏣ —] "* ]]; then
   echo "FAIL  missing render: $out"
   exit 1
 fi

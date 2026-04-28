@@ -3,16 +3,17 @@
 # one line for tmux's status-right. Never calls ccusage. Never blocks.
 #
 # Output (example):
-#   [✱ ctx ██▒▒▒ 38%] [❋ ███▒▒ 59% ⏰3h]
+#   [✳ ctx ██▒▒▒ 38%] [❋ ███▒▒ 59% ⏰3h]
 #
 # The percent shown is how much is *remaining* — Claude context on the left,
 # Codex 5-hour rate limit on the right. A full bar means a full tank, and the
 # color goes red as you run out.
 #
-# Tag glyphs are drawn in each vendor's brand color: ✱ in orange for
-# Claude, ❋ in white for OpenAI/Codex. A trailing "~" means estimated:true.
+# Tag glyphs are drawn in each vendor's brand color: ✳ in orange for
+# Claude, ❋ in white for OpenAI/Codex. A trailing "~" on non-context metrics
+# means estimated:true.
 #
-# Falls back to "[✱ —] [❋ —]" if the cache is missing or stale (>2 min).
+# Falls back to "[✳ —] [❋ —]" if the cache is missing or stale (>2 min).
 
 set -euo pipefail
 
@@ -24,7 +25,7 @@ source "$cu_self_dir/lib/bar.sh"
 
 CU_STALE_AFTER_SECS="${CU_STALE_AFTER_SECS:-120}"
 CU_DATE_FMT="${CU_DATE_FMT:-%H:%M %d-%b}"
-# Glyphs default to vendor logos (✱ Claude burst / ❋ OpenAI propeller). Set
+# Glyphs default to vendor logos (✳ Claude burst / ❋ OpenAI propeller). Set
 # CU_PLAIN=1 for an ASCII-safe fallback when the terminal font lacks them.
 if [[ "${CU_PLAIN:-0}" == "1" ]]; then
   CU_GLYPH_CLAUDE='C'
@@ -32,7 +33,7 @@ if [[ "${CU_PLAIN:-0}" == "1" ]]; then
   CU_FILL_OVERRIDE='#'
   CU_EMPTY_OVERRIDE='-'
 else
-  CU_GLYPH_CLAUDE='✱'   # eight-spoke burst, mirrors the Claude logo
+  CU_GLYPH_CLAUDE='✳'   # heavier eight-spoke burst, mirrors the Claude logo
   CU_GLYPH_CODEX='⏣'    # benzene ring with circle, mirrors the OpenAI hexagonal knot
 fi
 CU_COLOR_CLAUDE='colour208'   # Claude orange
@@ -50,7 +51,7 @@ cu_render_one() {
 
   local tag="#[fg=$color]$glyph#[default]"
   local label="$tag"
-  [[ $estimated == "true" ]] && label="${tag}~"
+  [[ $estimated == "true" && $kind != "context" ]] && label="${tag}~"
 
   if [[ $ok != "true" ]]; then
     printf '[%s ?]' "$label"

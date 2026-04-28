@@ -14,10 +14,10 @@ So: **`context-usage-tmux`**. One `run-shell` line, two compact bars on
 the far right of your status bar:
 
 ```
-[✱ ctx ██▒▒▒ 38%] [⏣ ███▒▒ 59% ⏰3h] 14:32 28-Apr
+[✳ ctx ██▒▒▒ 38%] [⏣ ███▒▒ 59% ⏰3h] 14:32 28-Apr
 ```
 
-`✱` is Claude (orange), `⏣` is Codex (white). The percent is what's
+`✳` is Claude (orange), `⏣` is Codex (white). The percent is what's
 **remaining** — full bar = full tank — and the color goes red as you run
 out. Claude is context remaining; Codex keeps the `⏰` reset timer because
 it is a rate-limit window.

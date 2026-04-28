@@ -5,10 +5,10 @@ remaining** and Codex CLI **5-hour rolling-window usage** as compact bars on the
 far right, with the Codex reset countdown and the date/time.
 
 ```
-… [✱ ctx ██▒▒▒ 38%] [⏣ ███▒▒ 59% ⏰3h] 14:32 28-Apr
+… [✳ ctx ██▒▒▒ 38%] [⏣ ███▒▒ 59% ⏰3h] 14:32 28-Apr
 ```
 
-`✱` is Claude (orange), `⏣` is OpenAI/Codex (white) — single-glyph stand-ins
+`✳` is Claude (orange), `⏣` is OpenAI/Codex (white) — single-glyph stand-ins
 for each vendor's logo, drawn in their brand color. The percent shown is how
 much is **remaining** — full bar = full tank.
 
@@ -84,12 +84,12 @@ See [`docs/architecture.md`](./docs/architecture.md) for the full design notes.
 ## Reading the bar
 
 ```
-[✱ ctx ██▒▒▒ 38%]
+[✳ ctx ██▒▒▒ 38%]
  │  │   │     │
  │  │   │     └── percent of Claude context *remaining* (38 = 38% left)
  │  │   └──────── filled cells (each cell = 1/WIDTH of the remaining context)
  │  └──────────── metric label: ctx = context window
- └─────────────── tag: ✱ = Claude (orange), ⏣ = Codex/OpenAI (white)
+ └─────────────── tag: ✳ = Claude (orange), ⏣ = Codex/OpenAI (white)
 ```
 
 Codex keeps the reset countdown because it is a rate-limit window. Claude
@@ -98,10 +98,10 @@ context usage has no reset countdown, so it only shows remaining context.
 Color thresholds (on percent **remaining**): green >50%, yellow 20–50%,
 red ≤20% (almost out).
 
-If you see `[✱ —] [⏣ —]`, the cache is missing or stale (>2 min old) —
+If you see `[✳ —] [⏣ —]`, the cache is missing or stale (>2 min old) —
 usually means the updater died. Check `pgrep -fa context-usage-update`.
 
-If Claude shows `[✱ ?]`, Claude Code has not refreshed the statusLine bridge
+If Claude shows `[✳ ?]`, Claude Code has not refreshed the statusLine bridge
 recently. Check `~/.claude/settings.json`, then send a Claude prompt or restart
 Claude Code so it runs `bin/context-usage-claude-statusline`.
 
@@ -109,7 +109,7 @@ If Codex shows `[⏣ ?]`, the `codex` CLI isn't on `$PATH` or its
 `account/rateLimits/read` RPC didn't respond — install codex ≥ 0.125 or
 override the binary location with `CODEX_BIN=/path/to/codex`.
 
-If your terminal font lacks `✱`/`⏣`/`█`/`▒`, set `CU_PLAIN=1` in the
+If your terminal font lacks `✳`/`⏣`/`█`/`▒`, set `CU_PLAIN=1` in the
 environment for an ASCII-safe fallback (`C`/`G`/`#`/`-`).
 
 ## Configuration

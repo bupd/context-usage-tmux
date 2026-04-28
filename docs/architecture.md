@@ -60,7 +60,7 @@ context-usage-update` should always show exactly one effective process.
 
 The renderer treats the cache as stale if `updated_at` is older than
 `CU_STALE_AFTER_SECS` (default 120s). When stale or missing, it prints
-`[✱ —] [⏣ —]` instead of guessing — usually the updater died or the
+`[✳ —] [⏣ —]` instead of guessing — usually the updater died or the
 machine just woke from sleep. The next updater tick (within 30s) heals
 it.
 
