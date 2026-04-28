@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# Long-running cache updater. Polls Claude + Codex usage every
+# CONTEXT_USAGE_REFRESH_SECS (default 30s) and writes JSON to
+# $XDG_RUNTIME_DIR/context-usage.json. Single instance enforced via flock.
+#
+# Usage:
+#   context-usage-update          # loop forever (intended for tmux startup)
+#   context-usage-update --once   # one tick, useful for tests / one-shot
+
+set -euo pipefail
+
+cu_self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=../lib/common.sh
+source "$cu_self_dir/lib/common.sh"
+# shellcheck source=../lib/claude.sh
+source "$cu_self_dir/lib/claude.sh"
+# shellcheck source=../lib/codex.sh
+source "$cu_self_dir/lib/codex.sh"
+
+cu_refresh_secs() {
+  printf '%s' "${CONTEXT_USAGE_REFRESH_SECS:-30}"
+}
+
+cu_tick() {
+  local claude codex now
+  claude="$(cu_claude_fetch)"
+  codex="$(cu_codex_fetch)"
+  now="$(cu_now_epoch)"
+
+  jq -nc \
+    --argjson c "$claude" \
+    --argjson g "$codex" \
+    --argjson now "$now" \
+    '{updated_at: $now, claude: $c, codex: $g}' \
+    | cu_atomic_write "$(cu_cache_path)"
+}
+
+cu_loop() {
+  local secs
+  secs="$(cu_refresh_secs)"
+  while true; do
+    cu_tick || true   # never let a single failure kill the loop
+    sleep "$secs"
+  done
+}
+
+case "${1:-}" in
+  --once)
+    cu_tick
+    ;;
+  "")
+    # Single-instance: open the lock file on FD 9, take a non-blocking lock,
+    # and silently exit if another updater already holds it.
+    exec 9>"$(cu_lock_path)"
+    flock --nonblock 9 || exit 0
+    cu_loop
+    ;;
+  *)
+    echo "usage: context-usage-update [--once]" >&2
+    exit 2
+    ;;
+esac
