@@ -5,8 +5,11 @@ A tmux status-bar widget that shows your current Claude Code and Codex CLI
 countdowns and the date/time.
 
 ```
-… [C~ ███▒▒ 62% ⏰2h14m] [G ██▒▒▒ 41% ⏰3h] 14:32 28-Apr
+… [✱~ ███▒▒ 62% ⏰2h14m] [❋ ██▒▒▒ 41% ⏰3h] 14:32 28-Apr
 ```
+
+`✱` is Claude (orange), `❋` is OpenAI/Codex (white) — single-glyph stand-ins
+for each vendor's logo, drawn in their brand color.
 
 Same idea as the macOS menu-bar widgets (Usage4Claude, ClaudeBar, AIQuotaBar) —
 but native to tmux, shell-only, no menu bar required.
@@ -49,23 +52,30 @@ config doesn't double-up.
 ## Reading the bar
 
 ```
-[C~ ███▒▒ 62% ⏰2h14m]
+[✱~ ███▒▒ 62% ⏰2h14m]
  │  │     │   │
  │  │     │   └── time until the 5h window resets
  │  │     └────── current usage percent
  │  └──────────── filled cells (each cell = 1/WIDTH of the window)
- └─────────────── tag: C = Claude, G = Codex/GPT; "~" = estimated
+ └─────────────── tag: ✱ = Claude (orange), ❋ = Codex/OpenAI (white); "~" = estimated
 ```
 
 `~` on a tag means the percent is heuristic. Claude carries it because we
-compute against ccusage's `--token-limit max` (max ever seen, not the official
-plan limit). Codex doesn't — its session JSONLs include real OpenAI rate-limit
-headers (`rate_limits.primary.used_percent`).
+report ccusage's `tokenLimitStatus.percentUsed`, which is computed against
+`--token-limit max` (max ever seen, not the official plan limit). Codex
+doesn't — its session JSONLs include real OpenAI rate-limit headers
+(`rate_limits.primary.used_percent`).
 
 Color thresholds: green <50%, yellow 50–80%, red ≥80%.
 
-If you see `[C —] [G —]`, the cache is missing or stale (>2 min old) — usually
-means the updater died. Check `pgrep -fa context-usage-update`.
+If you see `[✱ —] [❋ —]`, the cache is missing or stale (>2 min old) —
+usually means the updater died. Check `pgrep -fa context-usage-update`.
+
+If Codex shows `[❋ ?]`, it means there's no Codex session JSONL newer than
+5h. **Codex 0.125+** has moved its state into `~/.codex/state_5.sqlite` and
+only keeps rate-limit values in memory (the `account/rateLimits/read` RPC),
+so on-disk parsing only works for older releases. Tracking issue: surfacing
+the live RPC value here is on the roadmap.
 
 ## Configuration
 
