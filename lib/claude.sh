@@ -22,20 +22,17 @@ cu_claude_fetch() {
     return 0
   fi
 
-  local total limit end_iso
-  total="$(jq -r '.totalTokens // 0' <<<"$block")"
-  limit="$(jq -r '.tokenLimitStatus.limit // 0' <<<"$block")"
+  # ccusage's tokenLimitStatus.percentUsed already reflects projected usage
+  # (totalTokens + projected burst), which is what the live dashboard shows.
+  # Use it directly so our bar matches `ccusage blocks --live`.
+  local raw_pct end_iso
+  raw_pct="$(jq -r '.tokenLimitStatus.percentUsed // 0' <<<"$block")"
   end_iso="$(jq -r '.endTime // ""' <<<"$block")"
 
   local reset_epoch percent
   reset_epoch="$(cu_iso_to_epoch "$end_iso")"
   reset_epoch="${reset_epoch:-0}"
-
-  if [[ $limit -gt 0 ]]; then
-    percent="$(awk -v t="$total" -v l="$limit" 'BEGIN{p=(t*100.0)/l; if(p>100)p=100; printf "%.1f", p}')"
-  else
-    percent="0"
-  fi
+  percent="$(awk -v p="$raw_pct" 'BEGIN{if(p<0)p=0; if(p>100)p=100; printf "%.1f", p}')"
 
   jq -nc --argjson p "$percent" --argjson r "$reset_epoch" \
     '{percent: $p, reset_epoch: $r, ok: true, estimated: true}'
