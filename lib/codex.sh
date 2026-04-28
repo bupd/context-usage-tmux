@@ -1,85 +1,70 @@
 # shellcheck shell=bash
-# Codex CLI 5-hour usage via on-disk session JSONLs.
+# Codex CLI 5-hour usage via the codex app-server JSON-RPC.
 #
-# Strategy: scan the most recent session files under $CODEX_HOME/sessions
-# (default ~/.codex/sessions) for the latest event_msg of type token_count
-# whose payload.rate_limits.primary is non-null. That payload carries the
-# real, server-reported rate-limit data:
-#   primary.used_percent  (0-100)
-#   primary.window_minutes (300 for 5h)
-#   primary.resets_at     (unix epoch)
+# Codex 0.125+ stopped persisting the OpenAI rate-limit headers to
+# ~/.codex/sessions/*.jsonl — they're now only available through the
+# in-process `account/rateLimits/read` JSON-RPC call. We launch a one-shot
+# `codex app-server` and ask it directly. Roundtrip is ~1.5s, well under
+# the updater's 30s tick.
 #
-# If resets_at is in the past, the rolling window has already cleared on the
-# server, so report 0%. If no recent token_count event exists, report 0%.
+# Response shape (truncated):
+#   {"id":2,"result":{"rateLimits":{
+#     "primary":   {"usedPercent":0, "windowDurationMins":300, "resetsAt":<epoch>},
+#     "secondary": {"usedPercent":0, "windowDurationMins":10080,"resetsAt":<epoch>},
+#     "planType":"plus", ...
+#   }}}
 #
-# Output shape matches lib/claude.sh:
+# Output shape (matches lib/claude.sh):
 #   {"percent": <0-100>, "reset_epoch": <unix>, "ok": true|false, "estimated": false}
 #
-# estimated:false because this comes straight from OpenAI's rate-limit headers.
+# estimated:false because this is the live, server-authoritative value.
 
 cu_codex_home() {
   printf '%s' "${CODEX_HOME:-$HOME/.codex}"
 }
 
+cu_codex_bin() {
+  printf '%s' "${CODEX_BIN:-codex}"
+}
+
+# Speak just enough JSON-RPC to grab the rate-limit snapshot, then close.
+# stdout: raw JSON line of the result-bearing response (id=2). Empty on failure.
+cu_codex_rpc_query() {
+  local bin
+  bin="$(cu_codex_bin)"
+  command -v "$bin" >/dev/null 2>&1 || return 1
+
+  {
+    printf '{"jsonrpc":"2.0","method":"initialize","id":1,"params":{"clientInfo":{"name":"context-usage-tmux","title":"context-usage-tmux","version":"0.1.0"},"capabilities":{}}}\n'
+    sleep 0.3
+    printf '{"jsonrpc":"2.0","method":"account/rateLimits/read","id":2}\n'
+    sleep 1.5
+  } | timeout 10 "$bin" app-server 2>/dev/null \
+    | jq -c 'select(.id == 2)' 2>/dev/null
+}
+
 cu_codex_fetch() {
-  local sess_dir
-  sess_dir="$(cu_codex_home)/sessions"
-  if [[ ! -d $sess_dir ]]; then
-    cu_codex_error "no codex sessions dir"
+  local resp
+  resp="$(cu_codex_rpc_query)" || {
+    cu_codex_error "codex app-server unavailable"
+    return 0
+  }
+  if [[ -z $resp ]]; then
+    cu_codex_error "no response from codex app-server"
     return 0
   fi
 
-  # Newest 5 session files — enough to find a recent token_count without
-  # scanning the entire history every tick. Capture mtimes so we can
-  # distinguish "no recent activity" from "active session at 0%".
-  local files
-  files="$(find "$sess_dir" -name '*.jsonl' -printf '%T@ %p\n' 2>/dev/null \
-    | sort -rn | head -5)"
-  if [[ -z $files ]]; then
-    cu_codex_error "no codex sessions"
+  local pct reset_epoch
+  pct="$(jq -r '.result.rateLimits.primary.usedPercent // empty' <<<"$resp")"
+  reset_epoch="$(jq -r '.result.rateLimits.primary.resetsAt // empty' <<<"$resp")"
+
+  if [[ -z $pct ]]; then
+    cu_codex_error "no rate-limit primary in response"
     return 0
   fi
 
-  local now newest_mtime
-  now="$(cu_now_epoch)"
-  newest_mtime="$(awk 'NR==1{print int($1)}' <<<"$files")"
-  # Codex 0.125+ stores state in SQLite, not these JSONLs. If the newest
-  # session file is older than the 5h window itself, we have no signal —
-  # surface unknown rather than misreporting 0%.
-  if (( now - newest_mtime > 18000 )); then
-    cu_codex_error "no codex session in last 5h (rate-limits not on disk for codex>=0.125)"
-    return 0
-  fi
-
-  # Find the most recent rate-limit reading by walking files newest-first
-  # and grabbing the last token_count event with a non-null .primary.
-  local latest=""
-  while IFS= read -r line; do
-    [[ -z $line ]] && continue
-    local f="${line#* }"
-    local ev
-    ev="$(jq -c 'select(.type=="event_msg" and .payload.type=="token_count" and .payload.rate_limits.primary != null) | .payload.rate_limits.primary' "$f" 2>/dev/null | tail -1)"
-    if [[ -n $ev ]]; then
-      latest="$ev"
-      break
-    fi
-  done <<<"$files"
-
-  if [[ -z $latest ]]; then
-    # Recent session exists but no rate-limit headers yet — treat as 0%.
-    jq -nc '{percent: 0, reset_epoch: 0, ok: true, estimated: false}'
-    return 0
-  fi
-
-  local pct reset_epoch now
-  pct="$(jq -r '.used_percent // 0' <<<"$latest")"
-  reset_epoch="$(jq -r '.resets_at // 0' <<<"$latest")"
-  now="$(cu_now_epoch)"
-
-  if (( reset_epoch <= now )); then
-    pct="0"
-    reset_epoch="0"
-  fi
+  pct="$(awk -v p="$pct" 'BEGIN{if(p<0)p=0; if(p>100)p=100; printf "%.1f", p}')"
+  reset_epoch="${reset_epoch:-0}"
 
   jq -nc --argjson p "$pct" --argjson r "$reset_epoch" \
     '{percent: $p, reset_epoch: $r, ok: true, estimated: false}'
