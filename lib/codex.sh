@@ -30,20 +30,33 @@ cu_codex_fetch() {
   fi
 
   # Newest 5 session files — enough to find a recent token_count without
-  # scanning the entire history every tick.
+  # scanning the entire history every tick. Capture mtimes so we can
+  # distinguish "no recent activity" from "active session at 0%".
   local files
   files="$(find "$sess_dir" -name '*.jsonl' -printf '%T@ %p\n' 2>/dev/null \
-    | sort -rn | head -5 | cut -d' ' -f2-)"
+    | sort -rn | head -5)"
   if [[ -z $files ]]; then
-    jq -nc '{percent: 0, reset_epoch: 0, ok: true, estimated: false}'
+    cu_codex_error "no codex sessions"
+    return 0
+  fi
+
+  local now newest_mtime
+  now="$(cu_now_epoch)"
+  newest_mtime="$(awk 'NR==1{print int($1)}' <<<"$files")"
+  # Codex 0.125+ stores state in SQLite, not these JSONLs. If the newest
+  # session file is older than the 5h window itself, we have no signal —
+  # surface unknown rather than misreporting 0%.
+  if (( now - newest_mtime > 18000 )); then
+    cu_codex_error "no codex session in last 5h (rate-limits not on disk for codex>=0.125)"
     return 0
   fi
 
   # Find the most recent rate-limit reading by walking files newest-first
   # and grabbing the last token_count event with a non-null .primary.
   local latest=""
-  while IFS= read -r f; do
-    [[ -z $f ]] && continue
+  while IFS= read -r line; do
+    [[ -z $line ]] && continue
+    local f="${line#* }"
     local ev
     ev="$(jq -c 'select(.type=="event_msg" and .payload.type=="token_count" and .payload.rate_limits.primary != null) | .payload.rate_limits.primary' "$f" 2>/dev/null | tail -1)"
     if [[ -n $ev ]]; then
@@ -53,6 +66,7 @@ cu_codex_fetch() {
   done <<<"$files"
 
   if [[ -z $latest ]]; then
+    # Recent session exists but no rate-limit headers yet — treat as 0%.
     jq -nc '{percent: 0, reset_epoch: 0, ok: true, estimated: false}'
     return 0
   fi

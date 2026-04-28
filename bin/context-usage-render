@@ -3,12 +3,14 @@
 # one line for tmux's status-right. Never calls ccusage. Never blocks.
 #
 # Output (example):
-#   [C ███▒▒ 62% ⏰2h14m] [G~ ██▒▒▒ 41% ⏰3h]
+#   [✱~ ███▒▒ 62% ⏰2h14m] [❋ ██▒▒▒ 41% ⏰3h]
 #
-# Falls back to "[C —] [G —]" if the cache is missing or stale (>2 min).
-# The "~" suffix on a tag (e.g. C~ or G~) means estimated:true — for
-# Claude this is always the case today (ccusage limit is heuristic);
-# Codex is exact (real OpenAI rate-limit headers).
+# Tag glyphs are drawn in each vendor's brand color: ✱ in orange for
+# Claude, ❋ in white for OpenAI/Codex. A trailing "~" means estimated:true
+# — Claude carries it (ccusage limit is heuristic); Codex doesn't when it
+# has real rate-limit headers.
+#
+# Falls back to "[✱ —] [❋ —]" if the cache is missing or stale (>2 min).
 
 set -euo pipefail
 
@@ -19,16 +21,21 @@ source "$cu_self_dir/lib/common.sh"
 source "$cu_self_dir/lib/bar.sh"
 
 CU_STALE_AFTER_SECS="${CU_STALE_AFTER_SECS:-120}"
-CU_FALLBACK="[C —] [G —]"
+CU_GLYPH_CLAUDE='✱'   # eight-spoke burst, mirrors the Claude logo
+CU_GLYPH_CODEX='❋'    # eight-petal propeller, mirrors the OpenAI logo
+CU_COLOR_CLAUDE='colour208'   # Claude orange
+CU_COLOR_CODEX='colour255'    # OpenAI white
+CU_FALLBACK="[$CU_GLYPH_CLAUDE —] [$CU_GLYPH_CODEX —]"
 
 cu_render_one() {
-  local tag="$1" obj="$2"
+  local glyph="$1" color="$2" obj="$3"
   local ok pct reset estimated
   ok="$(jq -r '.ok // false' <<<"$obj")"
   pct="$(jq -r '.percent // 0' <<<"$obj")"
   reset="$(jq -r '.reset_epoch // 0' <<<"$obj")"
   estimated="$(jq -r '.estimated // false' <<<"$obj")"
 
+  local tag="#[fg=$color]$glyph#[default]"
   local label="$tag"
   [[ $estimated == "true" ]] && label="${tag}~"
 
@@ -65,7 +72,9 @@ cu_main() {
   local claude codex
   claude="$(jq -c '.claude' "$cache")"
   codex="$(jq -c '.codex' "$cache")"
-  printf '%s %s\n' "$(cu_render_one C "$claude")" "$(cu_render_one G "$codex")"
+  printf '%s %s\n' \
+    "$(cu_render_one "$CU_GLYPH_CLAUDE" "$CU_COLOR_CLAUDE" "$claude")" \
+    "$(cu_render_one "$CU_GLYPH_CODEX"  "$CU_COLOR_CODEX"  "$codex")"
 }
 
 cu_main "$@"
