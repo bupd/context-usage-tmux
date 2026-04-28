@@ -3,7 +3,10 @@
 # one line for tmux's status-right. Never calls ccusage. Never blocks.
 #
 # Output (example):
-#   [✱~ ███▒▒ 62% ⏰2h14m] [❋ ██▒▒▒ 41% ⏰3h]
+#   [✱~ ██▒▒▒ 38% ⏰2h14m] [❋ ███▒▒ 59% ⏰3h]
+#
+# The percent shown is how much of the 5h window is *remaining* — a full
+# bar means a full tank, and the color goes red as you run out.
 #
 # Tag glyphs are drawn in each vendor's brand color: ✱ in orange for
 # Claude, ❋ in white for OpenAI/Codex. A trailing "~" means estimated:true
@@ -30,12 +33,12 @@ if [[ "${CU_PLAIN:-0}" == "1" ]]; then
   CU_FILL_OVERRIDE='#'
   CU_EMPTY_OVERRIDE='-'
 else
-  CU_GLYPH_CLAUDE='✱'
-  CU_GLYPH_CODEX='❋'
+  CU_GLYPH_CLAUDE='✱'   # eight-spoke burst, mirrors the Claude logo
+  CU_GLYPH_CODEX='⏣'    # benzene ring with circle, mirrors the OpenAI hexagonal knot
 fi
 CU_COLOR_CLAUDE='colour208'   # Claude orange
 CU_COLOR_CODEX='colour255'    # OpenAI white
-CU_FALLBACK="[$CU_GLYPH_CLAUDE —] [$CU_GLYPH_CODEX —]"
+CU_FALLBACK="[$CU_GLYPH_CLAUDE —] [$CU_GLYPH_CODEX —]"  # — when cache absent
 
 cu_render_one() {
   local glyph="$1" color="$2" obj="$3"
@@ -54,12 +57,14 @@ cu_render_one() {
     return
   fi
 
-  local pct_int
-  pct_int="$(awk -v p="$pct" 'BEGIN{printf "%d", p+0.5}')"
+  # Show percent *remaining* — a full bar means a full tank.
+  local pct_left pct_left_int
+  pct_left="$(awk -v p="$pct" 'BEGIN{x=100-p; if(x<0)x=0; if(x>100)x=100; printf "%.2f", x}')"
+  pct_left_int="$(awk -v p="$pct_left" 'BEGIN{printf "%d", p+0.5}')"
   printf '[%s %s %s%% ⏰%s]' \
     "$label" \
-    "$(cu_bar_render "$pct")" \
-    "$pct_int" \
+    "$(cu_bar_render "$pct_left")" \
+    "$pct_left_int" \
     "$(cu_bar_countdown "$reset")"
 }
 
